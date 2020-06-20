@@ -8,20 +8,21 @@
 #include <cstdint>
 // TODO : This is crazy! but ok for now
 // Could buffer be a char vector? or is that just plain stupid?
-const int bufferSize = 1024 * 768 * 3 + 5;
+const int bufferSize = 1024 * 768 * 4 + 5;
 
 enum class MsgType : uint8_t {
 	EMPTY,
 	CHAR,
 	FrameBuf16Bit,
+	FrameBuf24Bit,
 	Event,
 	CString,
 };
 
 struct MessageHeader {
-	uint16_t length;
 	MsgType type {MsgType::EMPTY};
-	uint16_t payloadSize;
+	uint32_t length;
+	uint32_t payloadSize;
 };
 
 

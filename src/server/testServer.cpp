@@ -3,10 +3,15 @@
 #include <netdb.h>
 #include <unistd.h>
 #include "../common/message.h"
+#include <SDL.h>
+
+static constexpr int screenHeight{600};
+static constexpr  int screenWidth{800};
+SDL_Window* window = nullptr;
+SDL_Renderer* renderer = nullptr;
 
 
 char buffer[sizeof(Message)];
-
 
 void doWork(int* clientSocket) {
 	if (clientSocket == nullptr) {
@@ -16,25 +21,44 @@ void doWork(int* clientSocket) {
 
 Message readMessageFromSocket(int fd) {
 	int numberOfBytesRead = 0;
-	int bytesToRead = 2;
-	// We must read two bytes before we know the size of the packet
-	Message msg;
+	auto bytesLeft = sizeof(MessageHeader);
+	bool headerRead = false;
 
-	while (numberOfBytesRead < bytesToRead) {
-		int bytesReceived = recv(fd, buffer, sizeof(buffer), 0);
+	Message msg;
+	MessageHeader header;
+	char *buf = buffer;
+	bool done = false;
+
+	while (!done) {
+		std::cout << "Loop iteration \n";
+		int bytesReceived = recv(fd, buf, bytesLeft, 0);
 		if (bytesReceived !=  -1) {
-			numberOfBytesRead += bytesReceived;
-			if (numberOfBytesRead >= 2) {
-				// read lenght of message
-				uint16_t length = static_cast<uint16_t>(buffer[0]);
-				bytesToRead = length;
+			// Increment buffer pos
+			// and bytes left
+			buf += bytesReceived;
+			bytesLeft -= bytesReceived;
+			// If we have read enough bytes to have a MessageHeader
+			if (bytesLeft == 0) {
+				// Is this the header
+				if (!headerRead) {
+					memcpy(&header, buffer, sizeof(MessageHeader));
+					std::cout << "We found a header with length: " << header.length << std::endl;
+					headerRead = true;
+					// We are only missing they payload section now
+					bytesLeft = header.payloadSize;
+				}
+				else {
+					// We must be done reading the message
+					done = true;
+				}
 			}
 		}
 		else {
 			std::cerr << "Could not read from socket\n";
+			break;
 		}
 	}
-	memcpy(&msg, buffer, bytesToRead);
+	memcpy(&msg, buffer, header.length);
 	return msg;
 }
 
@@ -52,13 +76,51 @@ void handleMsg(const Message& msg) {
 		break;
 	case MsgType::FrameBuf16Bit:
 		break;
+	case MsgType::FrameBuf24Bit:
+		std::cout << "Received FrameBuf24Bit with payload length: " << msg.payloadSize << std::endl;
+		break;
 	}
 }
 
+bool initSDL()
+{
+	bool success = true;
+
+	// Initialize SDL
+	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+		SDL_Log("SDL could not be initialized! SDL_ERROR: %s\n", SDL_GetError());
+		success = false;
+	} else
+	{
+		// Create window
+		window = SDL_CreateWindow("SDL server test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, screenWidth, screenHeight, SDL_WINDOW_SHOWN);
+		if (window) {
+			// Create renderer for window_
+			renderer = SDL_CreateRenderer(window, -1, 0);
+			if (!renderer) {
+				SDL_Log("Could not create renderer! SDL_ERROR: %s\n", SDL_GetError());
+				success = false;
+			}
+			else {
+				SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
+			}
+		}
+		else {
+			SDL_Log("Could not create window! SDL_ERROR: ‰s \n", SDL_GetError());
+			success = false;
+		}
+	}
+	return success;
+}
 
 int main(int argc, char *argv[])
 {
-	std::cout << "Size of Msg:" << sizeof(Message) << std::endl;
+
+	if (!initSDL()) {
+		return -1;
+	}
+
+
 	struct sockaddr_storage their_addr;
 	socklen_t addr_size;
 	int serverSocket, new_fd;
@@ -88,15 +150,50 @@ int main(int argc, char *argv[])
 	listen(serverSocket, backlog);
 
 	addr_size = sizeof their_addr;
-	// Accept loop
-	//while(true)
+
+	// Blocking
+	new_fd = accept(serverSocket, (struct sockaddr *)&their_addr, &addr_size);
+
+	bool done = false;
+
+	while(!done)
 	{
-		// Blocking
-		new_fd = accept(serverSocket, (struct sockaddr *)&their_addr, &addr_size);
+		SDL_Event evt;
+		while(SDL_PollEvent(&evt)) {
+			switch (evt.type) {
+			case SDL_QUIT:
+				SDL_Log("Quit event\n");
+				done = true;
+				break;
+			default:
+				break;
+			}
+		}
+
 		// Now we have a client connected lets get to work
 		// Read from socket
 		const auto msg = readMessageFromSocket(new_fd);
 		handleMsg(msg);
+
+		if (msg.type == MsgType::FrameBuf24Bit) {
+			SDL_RenderClear(renderer);
+
+			SDL_Surface* framebufferSurface = SDL_CreateRGBSurfaceWithFormatFrom((void*)msg.payload, screenWidth, screenHeight, 24, 3 * screenWidth, SDL_PIXELFORMAT_RGB888);
+			SDL_Texture* framebufferTexture = SDL_CreateTextureFromSurface(renderer, framebufferSurface);
+			SDL_RenderCopy(renderer, framebufferTexture, NULL, NULL);
+
+			int w, h;
+			unsigned int pxFormat = SDL_GetWindowPixelFormat(window);
+			SDL_QueryTexture(framebufferTexture, &pxFormat, NULL, &w, &h);
+			const char* surfacePixelFormatName = SDL_GetPixelFormatName(pxFormat);
+			SDL_Log("The surface's pixelformat is %s", surfacePixelFormatName);
+
+
+
+			SDL_RenderPresent(renderer);
+			SDL_DestroyTexture(framebufferTexture);
+			SDL_FreeSurface(framebufferSurface);
+		}
 		//close(new_fd);
 	}
 
