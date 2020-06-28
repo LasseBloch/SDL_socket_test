@@ -6,7 +6,7 @@
 
 static constexpr int screenHeight{600};
 static constexpr  int screenWidth{800};
-SDL_Window* window = nullptr;
+SDL_Surface* surface = nullptr;
 SDL_Renderer* renderer = nullptr;
 SDL_Texture* texture = nullptr;
 
@@ -31,11 +31,17 @@ bool initSDL()
 		success = false;
 	} else
 	{
-		// Create window
-		window = SDL_CreateWindow("SDL client test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, screenWidth, screenHeight, SDL_WINDOW_SHOWN);
-		if (window) {
-			// Create renderer for window_
-			renderer = SDL_CreateRenderer(window, -1, 0);
+		uint32_t rmask = 0xff000000;
+		uint32_t gmask = 0x00ff0000;
+		uint32_t bmask = 0x0000ff00;
+		uint32_t amask = 0x000000ff;
+
+		surface = SDL_CreateRGBSurface(0, screenWidth, screenHeight, 32,
+										rmask, gmask, bmask, amask);
+
+		if (surface) {
+			// Create renderer for surface
+			renderer = SDL_CreateSoftwareRenderer(surface);
 			if (!renderer) {
 				SDL_Log("Could not create renderer! SDL_ERROR: %s\n", SDL_GetError());
 				success = false;
@@ -45,7 +51,7 @@ bool initSDL()
 			}
 		}
 		else {
-			SDL_Log("Could not create window! SDL_ERROR: ‰s \n", SDL_GetError());
+			SDL_Log("Could not create surface! SDL_ERROR: ‰s \n", SDL_GetError());
 			success = false;
 		}
 	}
@@ -74,7 +80,7 @@ void renderSprite(int spriteIndex) {
 	//const char* surfacePixelFormatName = SDL_GetPixelFormatName(pxFormat);
 	//SDL_Log("The surface's pixelformat is %s", surfacePixelFormatName);
 	SDL_RenderCopy(renderer, texture, &srcrect, &dstrect);
-	SDL_RenderPresent(renderer);
+	//SDL_RenderPresent(renderer);
 }
 
 void sendScreenDump(int socket, const SDL_Surface& screenDump) {

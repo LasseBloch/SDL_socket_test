@@ -30,7 +30,6 @@ Message readMessageFromSocket(int fd) {
 	bool done = false;
 
 	while (!done) {
-		std::cout << "Loop iteration \n";
 		int bytesReceived = recv(fd, buf, bytesLeft, 0);
 		if (bytesReceived !=  -1) {
 			// Increment buffer pos
